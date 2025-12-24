@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Call } from '@/types/call';
 import { useCallStore } from '@/store/callStore';
-import { RealtimeConnection } from '@/lib/api';
+import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import { LiveCallCard } from '@/components/LiveCallCard';
 import { PastCallsTable } from '@/components/PastCallsTable';
 import { SearchBar } from '@/components/SearchBar';
 import { UpdateTicketModal } from '@/components/UpdateTicketModal';
 import { DateRange } from 'react-day-picker';
-import { Phone, History } from 'lucide-react';
+import { Phone, History, Loader2 } from 'lucide-react';
 
 const Dashboard = () => {
   const [search, setSearch] = useState('');
@@ -17,25 +17,10 @@ const Dashboard = () => {
   const [ticketModalOpen, setTicketModalOpen] = useState(false);
 
   const calls = useCallStore((state) => state.calls);
-  const addTranscriptSegment = useCallStore((state) => state.addTranscriptSegment);
-  const setSystemStatus = useCallStore((state) => state.setSystemStatus);
+  const isLoading = useCallStore((state) => state.isLoading);
 
   // Connect to realtime updates
-  useEffect(() => {
-    const connection = new RealtimeConnection();
-    
-    connection.connect({
-      onTranscriptSegment: (segment) => {
-        addTranscriptSegment(segment);
-        setSystemStatus({ lastEventTimestamp: new Date() });
-      },
-      onConnectionChange: (connected) => {
-        setSystemStatus({ backendConnected: connected });
-      },
-    });
-
-    return () => connection.disconnect();
-  }, [addTranscriptSegment, setSystemStatus]);
+  useRealtimeSubscription();
 
   // Memoize filtered calls
   const liveCalls = useMemo(() => {
@@ -80,6 +65,17 @@ const Dashboard = () => {
     setSelectedCall(call);
     setTicketModalOpen(true);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading calls...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

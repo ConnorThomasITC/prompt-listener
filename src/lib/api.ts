@@ -1,116 +1,196 @@
+import { supabase } from '@/integrations/supabase/client';
 import { Call, TranscriptSegment, ApiResponse, PaginatedResponse, CallFilters } from '@/types/call';
-import { mockCalls, mockTranscripts } from '@/data/mockData';
 
-// Base URL for API - can be configured in settings
-let BASE_URL = '/api';
+// Helper to convert DB row to Call type
+const mapDbCallToCall = (row: {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  direction: string;
+  from_number: string;
+  to_number: string;
+  agent_name: string | null;
+  queue_or_dn: string | null;
+  ticket_id: string | null;
+  has_ticket_update: boolean;
+  notes: string | null;
+}): Call => ({
+  id: row.id,
+  startedAt: new Date(row.started_at),
+  endedAt: row.ended_at ? new Date(row.ended_at) : null,
+  status: row.status as Call['status'],
+  direction: row.direction as Call['direction'],
+  fromNumber: row.from_number,
+  toNumber: row.to_number,
+  agentName: row.agent_name,
+  queueOrDn: row.queue_or_dn,
+  ticketId: row.ticket_id,
+  hasTicketUpdate: row.has_ticket_update,
+  notes: row.notes,
+});
 
-export const setApiBaseUrl = (url: string) => {
-  BASE_URL = url;
-};
-
-export const getApiBaseUrl = () => BASE_URL;
-
-// Simulated API delay
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Helper to convert DB row to TranscriptSegment
+const mapDbSegmentToSegment = (row: {
+  id: string;
+  call_id: string;
+  speaker: string;
+  text: string;
+  is_final: boolean;
+  timestamp: string;
+}): TranscriptSegment => ({
+  id: row.id,
+  callId: row.call_id,
+  speaker: row.speaker as TranscriptSegment['speaker'],
+  text: row.text,
+  isFinal: row.is_final,
+  timestamp: new Date(row.timestamp),
+});
 
 // API Client
 export const api = {
   // Fetch calls with optional filters
   async getCalls(filters?: CallFilters): Promise<PaginatedResponse<Call>> {
-    await delay(300);
-    
-    let filtered = [...mockCalls];
-    
-    if (filters?.status && filters.status !== 'all') {
-      filtered = filtered.filter((call) => call.status === filters.status);
-    }
-    
-    if (filters?.search) {
-      const search = filters.search.toLowerCase();
-      filtered = filtered.filter(
-        (call) =>
-          call.fromNumber.toLowerCase().includes(search) ||
-          call.toNumber.toLowerCase().includes(search) ||
-          call.agentName?.toLowerCase().includes(search) ||
-          call.ticketId?.toLowerCase().includes(search)
-      );
-    }
-    
-    if (filters?.startDate) {
-      filtered = filtered.filter((call) => call.startedAt >= filters.startDate!);
-    }
-    
-    if (filters?.endDate) {
-      filtered = filtered.filter((call) => call.startedAt <= filters.endDate!);
-    }
-    
-    // Sort by startedAt descending
-    filtered.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-    
     const page = filters?.page || 1;
     const pageSize = 10;
     const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    
+    const end = start + pageSize - 1;
+
+    let query = supabase
+      .from('calls')
+      .select('*', { count: 'exact' })
+      .order('started_at', { ascending: false });
+
+    if (filters?.status && filters.status !== 'all') {
+      query = query.eq('status', filters.status);
+    }
+
+    if (filters?.search) {
+      const search = `%${filters.search}%`;
+      query = query.or(`from_number.ilike.${search},to_number.ilike.${search},agent_name.ilike.${search},ticket_id.ilike.${search}`);
+    }
+
+    if (filters?.startDate) {
+      query = query.gte('started_at', filters.startDate.toISOString());
+    }
+
+    if (filters?.endDate) {
+      query = query.lte('started_at', filters.endDate.toISOString());
+    }
+
+    query = query.range(start, end);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Error fetching calls:', error);
+      return {
+        data: [],
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 0,
+      };
+    }
+
+    const total = count || 0;
+
     return {
-      data: filtered.slice(start, end),
-      total: filtered.length,
+      data: (data || []).map(mapDbCallToCall),
+      total,
       page,
       pageSize,
-      totalPages: Math.ceil(filtered.length / pageSize),
+      totalPages: Math.ceil(total / pageSize),
     };
   },
-  
+
   // Fetch single call by ID
   async getCallById(id: string): Promise<ApiResponse<Call | null>> {
-    await delay(200);
-    const call = mockCalls.find((c) => c.id === id);
+    const { data, error } = await supabase
+      .from('calls')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error('Error fetching call:', error);
+      return {
+        data: null,
+        ok: false,
+        message: 'Call not found',
+      };
+    }
+
     return {
-      data: call || null,
-      ok: !!call,
-      message: call ? undefined : 'Call not found',
-    };
-  },
-  
-  // Fetch transcript for a call
-  async getTranscript(callId: string): Promise<ApiResponse<TranscriptSegment[]>> {
-    await delay(200);
-    const transcript = mockTranscripts[callId] || [];
-    return {
-      data: transcript,
+      data: mapDbCallToCall(data),
       ok: true,
     };
   },
-  
+
+  // Fetch transcript for a call
+  async getTranscript(callId: string): Promise<ApiResponse<TranscriptSegment[]>> {
+    const { data, error } = await supabase
+      .from('transcript_segments')
+      .select('*')
+      .eq('call_id', callId)
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching transcript:', error);
+      return {
+        data: [],
+        ok: false,
+        message: 'Failed to fetch transcript',
+      };
+    }
+
+    return {
+      data: (data || []).map(mapDbSegmentToSegment),
+      ok: true,
+    };
+  },
+
   // Update ticket with transcript
   async updateTicket(
     callId: string,
     ticketId?: string
   ): Promise<ApiResponse<{ ticketId: string }>> {
-    await delay(1000);
-    
-    // Simulate success/failure
-    const success = Math.random() > 0.1;
-    
-    if (success) {
-      const newTicketId = ticketId || `TKT-2024-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const { data, error } = await supabase.functions.invoke('update-ticket', {
+      body: { callId, ticketId },
+    });
+
+    if (error) {
+      console.error('Error updating ticket:', error);
       return {
-        data: { ticketId: newTicketId },
-        ok: true,
-        message: 'Transcript successfully pushed to ConnectWise Manage',
+        data: { ticketId: '' },
+        ok: false,
+        message: error.message || 'Failed to update ticket',
       };
     }
-    
+
     return {
-      data: { ticketId: '' },
-      ok: false,
-      message: 'Failed to update ticket. Please try again.',
+      data: { ticketId: ticketId || data?.ticketId || '' },
+      ok: data?.ok ?? true,
+      message: data?.message || 'Transcript successfully pushed to ConnectWise Manage',
     };
   },
-  
+
   // Save call notes
   async saveNotes(callId: string, notes: string): Promise<ApiResponse<null>> {
-    await delay(300);
+    const { error } = await supabase
+      .from('calls')
+      .update({ notes })
+      .eq('id', callId);
+
+    if (error) {
+      console.error('Error saving notes:', error);
+      return {
+        data: null,
+        ok: false,
+        message: 'Failed to save notes',
+      };
+    }
+
     return {
       data: null,
       ok: true,
@@ -119,63 +199,41 @@ export const api = {
   },
 };
 
-// WebSocket/SSE simulation
-export class RealtimeConnection {
-  private intervalId: NodeJS.Timeout | null = null;
-  private callbacks: {
-    onCallStarted?: (call: Call) => void;
-    onCallUpdated?: (call: Partial<Call> & { id: string }) => void;
-    onTranscriptSegment?: (segment: TranscriptSegment) => void;
-    onCallEnded?: (callId: string, endedAt: Date) => void;
-    onConnectionChange?: (connected: boolean) => void;
-  } = {};
-  
-  connect(callbacks: typeof this.callbacks) {
-    this.callbacks = callbacks;
-    this.callbacks.onConnectionChange?.(true);
-    
-    // Simulate periodic transcript updates for live calls
-    this.intervalId = setInterval(() => {
-      const liveCalls = mockCalls.filter((c) => c.status === 'live');
-      if (liveCalls.length > 0) {
-        const randomCall = liveCalls[Math.floor(Math.random() * liveCalls.length)];
-        
-        // Simulate new transcript segment
-        const newSegment: TranscriptSegment = {
-          id: Math.random().toString(36).substring(2, 15),
-          callId: randomCall.id,
-          speaker: Math.random() > 0.5 ? 'agent' : 'caller',
-          text: this.getRandomPhrase(),
-          isFinal: Math.random() > 0.3,
-          timestamp: new Date(),
-        };
-        
-        this.callbacks.onTranscriptSegment?.(newSegment);
+// Realtime subscription helper
+export const subscribeToRealtimeUpdates = (callbacks: {
+  onCallChange?: (call: Call, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void;
+  onTranscriptSegment?: (segment: TranscriptSegment) => void;
+}) => {
+  const channel = supabase
+    .channel('db-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'calls' },
+      (payload) => {
+        console.log('Call change:', payload);
+        if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
+          callbacks.onCallChange?.(
+            mapDbCallToCall(payload.new as Parameters<typeof mapDbCallToCall>[0]),
+            payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE'
+          );
+        }
       }
-    }, 5000);
-    
-    return this;
-  }
-  
-  disconnect() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.callbacks.onConnectionChange?.(false);
-  }
-  
-  private getRandomPhrase(): string {
-    const phrases = [
-      "Let me check on that for you...",
-      "I understand, one moment please.",
-      "Could you provide more details?",
-      "I'm looking into this now.",
-      "That's a great question.",
-      "Yes, I can help with that.",
-      "Let me verify your information.",
-      "Is there anything else you need?",
-    ];
-    return phrases[Math.floor(Math.random() * phrases.length)];
-  }
-}
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'transcript_segments' },
+      (payload) => {
+        console.log('Transcript segment:', payload);
+        if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
+          callbacks.onTranscriptSegment?.(
+            mapDbSegmentToSegment(payload.new as Parameters<typeof mapDbSegmentToSegment>[0])
+          );
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+};

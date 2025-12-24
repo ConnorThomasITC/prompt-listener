@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCallStore } from '@/store/callStore';
-import { api, RealtimeConnection } from '@/lib/api';
+import { api } from '@/lib/api';
 import { StatusBadge, DirectionBadge, TicketBadge } from '@/components/StatusBadge';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { UpdateTicketModal } from '@/components/UpdateTicketModal';
@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
   ArrowLeft,
-  Phone,
   User,
   Clock,
   Calendar,
@@ -29,8 +28,8 @@ const CallDetail = () => {
 
   const calls = useCallStore((state) => state.calls);
   const transcripts = useCallStore((state) => state.transcripts);
-  const addTranscriptSegment = useCallStore((state) => state.addTranscriptSegment);
   const updateCall = useCallStore((state) => state.updateCall);
+  const setTranscripts = useCallStore((state) => state.setTranscripts);
 
   const call = useMemo(() => {
     return calls.find((c) => c.id === id);
@@ -44,6 +43,28 @@ const CallDetail = () => {
   const [savingNotes, setSavingNotes] = useState(false);
   const [ticketModalOpen, setTicketModalOpen] = useState(false);
   const [duration, setDuration] = useState('');
+  const [loadingTranscript, setLoadingTranscript] = useState(false);
+
+  // Load transcript from database
+  useEffect(() => {
+    if (!id || callTranscripts.length > 0) return;
+
+    const loadTranscript = async () => {
+      setLoadingTranscript(true);
+      try {
+        const result = await api.getTranscript(id);
+        if (result.ok) {
+          setTranscripts(id, result.data);
+        }
+      } catch (error) {
+        console.error('Failed to load transcript:', error);
+      } finally {
+        setLoadingTranscript(false);
+      }
+    };
+
+    loadTranscript();
+  }, [id, callTranscripts.length, setTranscripts]);
 
   // Calculate duration
   useEffect(() => {
@@ -71,34 +92,28 @@ const CallDetail = () => {
     }
   }, [call]);
 
-  // Connect to realtime for live calls
+  // Update notes when call changes
   useEffect(() => {
-    if (!call || call.status !== 'live') return;
-
-    const connection = new RealtimeConnection();
-    
-    connection.connect({
-      onTranscriptSegment: (segment) => {
-        if (segment.callId === id) {
-          addTranscriptSegment(segment);
-        }
-      },
-    });
-
-    return () => connection.disconnect();
-  }, [id, call?.status, addTranscriptSegment]);
+    if (call?.notes !== undefined) {
+      setNotes(call.notes || '');
+    }
+  }, [call?.notes]);
 
   const handleSaveNotes = async () => {
     if (!call) return;
     
     setSavingNotes(true);
     try {
-      await api.saveNotes(call.id, notes);
-      updateCall(call.id, { notes });
-      toast({
-        title: 'Notes Saved',
-        description: 'Your notes have been saved successfully.',
-      });
+      const result = await api.saveNotes(call.id, notes);
+      if (result.ok) {
+        updateCall(call.id, { notes });
+        toast({
+          title: 'Notes Saved',
+          description: 'Your notes have been saved successfully.',
+        });
+      } else {
+        throw new Error(result.message);
+      }
     } catch (error) {
       toast({
         title: 'Error',
@@ -198,10 +213,16 @@ const CallDetail = () => {
               <CardTitle className="text-lg">Transcript</CardTitle>
             </CardHeader>
             <CardContent className="h-[500px]">
-              <TranscriptViewer
-                segments={callTranscripts}
-                isLive={call.status === 'live'}
-              />
+              {loadingTranscript ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <TranscriptViewer
+                  segments={callTranscripts}
+                  isLive={call.status === 'live'}
+                />
+              )}
             </CardContent>
           </Card>
         </div>
