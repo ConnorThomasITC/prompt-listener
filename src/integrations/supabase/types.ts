@@ -14,7 +14,95 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      calls: {
+        Row: {
+          agent_name: string | null
+          created_at: string
+          direction: Database["public"]["Enums"]["call_direction"]
+          ended_at: string | null
+          from_number: string
+          has_ticket_update: boolean
+          id: string
+          notes: string | null
+          queue_or_dn: string | null
+          started_at: string
+          status: Database["public"]["Enums"]["call_status"]
+          ticket_id: string | null
+          to_number: string
+          updated_at: string
+        }
+        Insert: {
+          agent_name?: string | null
+          created_at?: string
+          direction: Database["public"]["Enums"]["call_direction"]
+          ended_at?: string | null
+          from_number: string
+          has_ticket_update?: boolean
+          id?: string
+          notes?: string | null
+          queue_or_dn?: string | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["call_status"]
+          ticket_id?: string | null
+          to_number: string
+          updated_at?: string
+        }
+        Update: {
+          agent_name?: string | null
+          created_at?: string
+          direction?: Database["public"]["Enums"]["call_direction"]
+          ended_at?: string | null
+          from_number?: string
+          has_ticket_update?: boolean
+          id?: string
+          notes?: string | null
+          queue_or_dn?: string | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["call_status"]
+          ticket_id?: string | null
+          to_number?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      transcript_segments: {
+        Row: {
+          call_id: string
+          created_at: string
+          id: string
+          is_final: boolean
+          speaker: Database["public"]["Enums"]["speaker_type"]
+          text: string
+          timestamp: string
+        }
+        Insert: {
+          call_id: string
+          created_at?: string
+          id?: string
+          is_final?: boolean
+          speaker?: Database["public"]["Enums"]["speaker_type"]
+          text: string
+          timestamp?: string
+        }
+        Update: {
+          call_id?: string
+          created_at?: string
+          id?: string
+          is_final?: boolean
+          speaker?: Database["public"]["Enums"]["speaker_type"]
+          text?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transcript_segments_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +111,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      call_direction: "inbound" | "outbound"
+      call_status: "live" | "ended" | "failed"
+      speaker_type: "caller" | "agent" | "unknown"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +240,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      call_direction: ["inbound", "outbound"],
+      call_status: ["live", "ended", "failed"],
+      speaker_type: ["caller", "agent", "unknown"],
+    },
   },
 } as const
