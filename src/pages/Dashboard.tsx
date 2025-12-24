@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Call } from '@/types/call';
 import { useCallStore } from '@/store/callStore';
 import { RealtimeConnection } from '@/lib/api';
@@ -35,36 +35,46 @@ const Dashboard = () => {
     });
 
     return () => connection.disconnect();
-  }, []);
+  }, [addTranscriptSegment, setSystemStatus]);
 
-  // Filter calls
-  const liveCalls = calls.filter((call) => call.status === 'live');
+  // Memoize filtered calls
+  const liveCalls = useMemo(() => {
+    return calls.filter((call) => call.status === 'live');
+  }, [calls]);
   
-  let pastCalls = calls.filter((call) => call.status !== 'live');
-  
-  if (search) {
-    const searchLower = search.toLowerCase();
-    pastCalls = pastCalls.filter(
-      (call) =>
-        call.fromNumber.toLowerCase().includes(searchLower) ||
-        call.toNumber.toLowerCase().includes(searchLower) ||
-        call.agentName?.toLowerCase().includes(searchLower) ||
-        call.ticketId?.toLowerCase().includes(searchLower)
-    );
-  }
+  const filteredPastCalls = useMemo(() => {
+    let pastCalls = calls.filter((call) => call.status !== 'live');
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      pastCalls = pastCalls.filter(
+        (call) =>
+          call.fromNumber.toLowerCase().includes(searchLower) ||
+          call.toNumber.toLowerCase().includes(searchLower) ||
+          call.agentName?.toLowerCase().includes(searchLower) ||
+          call.ticketId?.toLowerCase().includes(searchLower)
+      );
+    }
 
-  if (dateRange?.from) {
-    pastCalls = pastCalls.filter((call) => call.startedAt >= dateRange.from!);
-  }
-  if (dateRange?.to) {
-    pastCalls = pastCalls.filter((call) => call.startedAt <= dateRange.to!);
-  }
+    if (dateRange?.from) {
+      pastCalls = pastCalls.filter((call) => call.startedAt >= dateRange.from!);
+    }
+    if (dateRange?.to) {
+      pastCalls = pastCalls.filter((call) => call.startedAt <= dateRange.to!);
+    }
 
-  // Sort and paginate
-  pastCalls.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    // Sort newest first
+    pastCalls.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    
+    return pastCalls;
+  }, [calls, search, dateRange]);
+
+  // Pagination
   const pageSize = 10;
-  const totalPages = Math.ceil(pastCalls.length / pageSize);
-  const paginatedCalls = pastCalls.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.ceil(filteredPastCalls.length / pageSize);
+  const paginatedCalls = useMemo(() => {
+    return filteredPastCalls.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredPastCalls, page]);
 
   const handleUpdateTicket = (call: Call) => {
     setSelectedCall(call);
@@ -126,7 +136,7 @@ const Dashboard = () => {
             </div>
             <h2 className="text-lg font-semibold">Past Calls</h2>
             <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-              {pastCalls.length}
+              {filteredPastCalls.length}
             </span>
           </div>
 

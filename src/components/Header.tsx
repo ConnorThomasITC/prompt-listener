@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useCallStore } from '@/store/callStore';
@@ -5,8 +6,12 @@ import { Phone, Settings, Activity, Wifi, WifiOff } from 'lucide-react';
 
 export const Header = () => {
   const location = useLocation();
+  const calls = useCallStore((state) => state.calls);
   const systemStatus = useCallStore((state) => state.systemStatus);
-  const liveCalls = useCallStore((state) => state.getLiveCalls());
+  
+  const liveCallsCount = useMemo(() => {
+    return calls.filter((call) => call.status === 'live').length;
+  }, [calls]);
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: Phone },
@@ -56,11 +61,11 @@ export const Header = () => {
           {/* Status Indicators */}
           <div className="flex items-center gap-4">
             {/* Live Calls Badge */}
-            {liveCalls.length > 0 && (
+            {liveCallsCount > 0 && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20">
                 <span className="live-indicator" />
                 <span className="text-sm font-medium text-success">
-                  {liveCalls.length} Live
+                  {liveCallsCount} Live
                 </span>
               </div>
             )}
