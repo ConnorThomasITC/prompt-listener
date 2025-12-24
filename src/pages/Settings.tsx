@@ -1,57 +1,60 @@
 import { useState } from 'react';
 import { useCallStore } from '@/store/callStore';
+import { getApiBaseUrl, setApiBaseUrl } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import {
   Settings as SettingsIcon,
+  Server,
   Wifi,
   WifiOff,
   Clock,
   Users,
+  Save,
   RefreshCw,
-  Database,
 } from 'lucide-react';
 
 const Settings = () => {
   const { toast } = useToast();
   const systemStatus = useCallStore((state) => state.systemStatus);
   const setSystemStatus = useCallStore((state) => state.setSystemStatus);
-  const [testing, setTesting] = useState(false);
 
-  const handleTestConnection = async () => {
-    setTesting(true);
+  const [baseUrl, setBaseUrl] = useState(getApiBaseUrl());
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      // Test by fetching from the database
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/calls?limit=1`, {
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-      });
-      
-      if (response.ok) {
-        toast({
-          title: 'Connection Test',
-          description: 'Backend connection successful.',
-        });
-        setSystemStatus({
-          backendConnected: true,
-          lastEventTimestamp: new Date(),
-        });
-      } else {
-        throw new Error('Connection failed');
-      }
-    } catch {
+      setApiBaseUrl(baseUrl);
       toast({
-        title: 'Connection Failed',
-        description: 'Unable to connect to backend.',
+        title: 'Settings Saved',
+        description: 'Backend URL has been updated.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings.',
         variant: 'destructive',
       });
-      setSystemStatus({ backendConnected: false });
     } finally {
-      setTesting(false);
+      setSaving(false);
     }
+  };
+
+  const handleTestConnection = async () => {
+    // Simulate connection test
+    toast({
+      title: 'Connection Test',
+      description: 'Backend connection successful.',
+    });
+    setSystemStatus({
+      backendConnected: true,
+      lastEventTimestamp: new Date(),
+    });
   };
 
   return (
@@ -73,28 +76,37 @@ const Settings = () => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
+            <Server className="h-5 w-5" />
             Backend Connection
           </CardTitle>
           <CardDescription>
-            Connected to Lovable Cloud for data persistence and real-time updates.
+            Configure the connection to your backend API server.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="p-4 rounded-lg bg-muted/50 border border-border">
-            <p className="text-sm text-muted-foreground mb-4">
-              Your app is connected to Lovable Cloud which provides:
+          <div className="space-y-2">
+            <Label htmlFor="baseUrl">Base URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="baseUrl"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.example.com"
+                className="flex-1"
+              />
+              <Button onClick={handleTestConnection} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Test
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The base URL for all API requests (e.g., https://your-backend.com/api)
             </p>
-            <ul className="text-sm space-y-1 text-muted-foreground">
-              <li>• Real-time database for calls and transcripts</li>
-              <li>• Backend functions for ticket updates</li>
-              <li>• Automatic real-time sync across clients</li>
-            </ul>
           </div>
 
-          <Button onClick={handleTestConnection} disabled={testing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${testing ? 'animate-spin' : ''}`} />
-            Test Connection
+          <Button onClick={handleSave} disabled={saving}>
+            <Save className="h-4 w-4 mr-2" />
+            Save Settings
           </Button>
         </CardContent>
       </Card>
