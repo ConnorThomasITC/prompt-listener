@@ -1,39 +1,37 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useCallStore } from '@/store/callStore';
 import { api, subscribeToRealtimeUpdates } from '@/lib/api';
 
 export const useRealtimeSubscription = () => {
-  const { 
-    setCalls, 
-    upsertCall, 
-    addTranscriptSegment, 
-    setIsConnected, 
-    setIsLoading,
-    setSystemStatus 
-  } = useCallStore();
+  const store = useCallStore();
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
+    // Prevent double initialization in strict mode
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
     // Load initial data
     const loadInitialData = async () => {
-      setIsLoading(true);
+      store.setIsLoading(true);
       try {
         // Fetch all calls (not just paginated)
         const liveResult = await api.getCalls({ status: 'live' });
         const endedResult = await api.getCalls({ status: 'ended' });
         
         const allCalls = [...liveResult.data, ...endedResult.data];
-        setCalls(allCalls);
+        store.setCalls(allCalls);
         
-        setIsConnected(true);
-        setSystemStatus({ 
+        store.setIsConnected(true);
+        store.setSystemStatus({ 
           backendConnected: true,
           lastEventTimestamp: new Date(),
         });
       } catch (error) {
         console.error('Failed to load initial data:', error);
-        setIsConnected(false);
+        store.setIsConnected(false);
       } finally {
-        setIsLoading(false);
+        store.setIsLoading(false);
       }
     };
 
@@ -43,18 +41,18 @@ export const useRealtimeSubscription = () => {
     const unsubscribe = subscribeToRealtimeUpdates({
       onCallChange: (call, eventType) => {
         console.log('Realtime call update:', eventType, call.id);
-        upsertCall(call);
-        setSystemStatus({ lastEventTimestamp: new Date() });
+        store.upsertCall(call);
+        store.setSystemStatus({ lastEventTimestamp: new Date() });
       },
       onTranscriptSegment: (segment) => {
         console.log('Realtime transcript segment:', segment.callId);
-        addTranscriptSegment(segment);
+        store.addTranscriptSegment(segment);
       },
     });
 
     return () => {
       unsubscribe();
-      setIsConnected(false);
+      hasInitialized.current = false;
     };
-  }, [setCalls, upsertCall, addTranscriptSegment, setIsConnected, setIsLoading, setSystemStatus]);
+  }, []); // Empty dependency array - store is stable
 };
