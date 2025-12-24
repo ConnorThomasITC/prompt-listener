@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Call, TranscriptSegment, SystemStatus, CallFilters } from '@/types/call';
-import { mockCalls, mockTranscripts } from '@/data/mockData';
 
 interface CallStore {
   // State
@@ -9,11 +8,13 @@ interface CallStore {
   filters: CallFilters;
   systemStatus: SystemStatus;
   isConnected: boolean;
+  isLoading: boolean;
   
   // Actions
   setCalls: (calls: Call[]) => void;
   addCall: (call: Call) => void;
   updateCall: (id: string, updates: Partial<Call>) => void;
+  upsertCall: (call: Call) => void;
   endCall: (id: string, endedAt: Date) => void;
   
   setTranscripts: (callId: string, segments: TranscriptSegment[]) => void;
@@ -23,6 +24,7 @@ interface CallStore {
   setFilters: (filters: Partial<CallFilters>) => void;
   setSystemStatus: (status: Partial<SystemStatus>) => void;
   setIsConnected: (connected: boolean) => void;
+  setIsLoading: (loading: boolean) => void;
   
   // Selectors
   getLiveCalls: () => Call[];
@@ -32,20 +34,21 @@ interface CallStore {
 }
 
 export const useCallStore = create<CallStore>((set, get) => ({
-  // Initial state with mock data
-  calls: mockCalls,
-  transcripts: mockTranscripts,
+  // Initial state - empty until loaded from database
+  calls: [],
+  transcripts: {},
   filters: {
     status: 'all',
     search: '',
     page: 1,
   },
   systemStatus: {
-    backendConnected: true,
-    lastEventTimestamp: new Date(),
-    activeConnections: 1,
+    backendConnected: false,
+    lastEventTimestamp: null,
+    activeConnections: 0,
   },
-  isConnected: true,
+  isConnected: false,
+  isLoading: true,
 
   // Actions
   setCalls: (calls) => set({ calls }),
@@ -59,6 +62,16 @@ export const useCallStore = create<CallStore>((set, get) => ({
       call.id === id ? { ...call, ...updates } : call
     ),
   })),
+
+  upsertCall: (call) => set((state) => {
+    const existingIndex = state.calls.findIndex((c) => c.id === call.id);
+    if (existingIndex >= 0) {
+      const newCalls = [...state.calls];
+      newCalls[existingIndex] = call;
+      return { calls: newCalls };
+    }
+    return { calls: [call, ...state.calls] };
+  }),
   
   endCall: (id, endedAt) => set((state) => ({
     calls: state.calls.map((call) =>
@@ -76,6 +89,10 @@ export const useCallStore = create<CallStore>((set, get) => ({
       transcripts: {
         ...state.transcripts,
         [segment.callId]: [...existing, segment],
+      },
+      systemStatus: {
+        ...state.systemStatus,
+        lastEventTimestamp: new Date(),
       },
     };
   }),
@@ -97,7 +114,16 @@ export const useCallStore = create<CallStore>((set, get) => ({
     systemStatus: { ...state.systemStatus, ...status },
   })),
   
-  setIsConnected: (connected) => set({ isConnected: connected }),
+  setIsConnected: (connected) => set((state) => ({ 
+    isConnected: connected,
+    systemStatus: {
+      ...state.systemStatus,
+      backendConnected: connected,
+      activeConnections: connected ? 1 : 0,
+    },
+  })),
+
+  setIsLoading: (loading) => set({ isLoading: loading }),
   
   // Selectors
   getLiveCalls: () => get().calls.filter((call) => call.status === 'live'),
