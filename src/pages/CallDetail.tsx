@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCallStore } from '@/store/callStore';
 import { api, RealtimeConnection } from '@/lib/api';
@@ -27,10 +27,18 @@ const CallDetail = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const call = useCallStore((state) => state.getCallById(id || ''));
-  const transcripts = useCallStore((state) => state.getTranscriptByCallId(id || ''));
+  const calls = useCallStore((state) => state.calls);
+  const transcripts = useCallStore((state) => state.transcripts);
   const addTranscriptSegment = useCallStore((state) => state.addTranscriptSegment);
   const updateCall = useCallStore((state) => state.updateCall);
+
+  const call = useMemo(() => {
+    return calls.find((c) => c.id === id);
+  }, [calls, id]);
+
+  const callTranscripts = useMemo(() => {
+    return transcripts[id || ''] || [];
+  }, [transcripts, id]);
 
   const [notes, setNotes] = useState(call?.notes || '');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -78,7 +86,7 @@ const CallDetail = () => {
     });
 
     return () => connection.disconnect();
-  }, [id, call?.status]);
+  }, [id, call?.status, addTranscriptSegment]);
 
   const handleSaveNotes = async () => {
     if (!call) return;
@@ -191,7 +199,7 @@ const CallDetail = () => {
             </CardHeader>
             <CardContent className="h-[500px]">
               <TranscriptViewer
-                segments={transcripts}
+                segments={callTranscripts}
                 isLive={call.status === 'live'}
               />
             </CardContent>

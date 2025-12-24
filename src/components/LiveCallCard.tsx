@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Call } from '@/types/call';
 import { useCallStore } from '@/store/callStore';
 import { StatusBadge, DirectionBadge, TicketBadge } from './StatusBadge';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Eye, TicketPlus, User, Clock, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { formatDistanceToNow } from 'date-fns';
+import { useState, useEffect } from 'react';
 
 interface LiveCallCardProps {
   call: Call;
@@ -15,8 +15,12 @@ interface LiveCallCardProps {
 
 export const LiveCallCard = ({ call, onUpdateTicket }: LiveCallCardProps) => {
   const navigate = useNavigate();
-  const transcripts = useCallStore((state) => state.getTranscriptByCallId(call.id));
+  const transcripts = useCallStore((state) => state.transcripts);
   const [duration, setDuration] = useState('');
+
+  const callTranscripts = useMemo(() => {
+    return transcripts[call.id] || [];
+  }, [transcripts, call.id]);
 
   // Update duration every second
   useEffect(() => {
@@ -32,8 +36,8 @@ export const LiveCallCard = ({ call, onUpdateTicket }: LiveCallCardProps) => {
     return () => clearInterval(interval);
   }, [call.startedAt]);
 
-  const latestTranscript = transcripts[transcripts.length - 1];
-  const hasFinalTranscripts = transcripts.some((t) => t.isFinal);
+  const latestTranscript = callTranscripts[callTranscripts.length - 1];
+  const hasFinalTranscripts = callTranscripts.some((t) => t.isFinal);
 
   return (
     <Card className="console-card pulse-glow animate-fade-in">
